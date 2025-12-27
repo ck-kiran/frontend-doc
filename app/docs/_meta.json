@@ -1,0 +1,15 @@
+{
+  "page": "Introduction",
+  "getting-started": "Getting Started",
+  "javascript": "JavaScript Fundamentals",
+  "react": "React & Hooks",
+  "nextjs": "Next.js",
+  "css": "Styling & CSS",
+  "typescript": "TypeScript",
+  "performance": "Performance",
+  "testing": "Testing",
+  "architecture": "System Design",
+  "deployment": "Deployment",
+  "guides": "Advanced Guides",
+  "api": "API Reference"
+}

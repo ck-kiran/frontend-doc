@@ -27,10 +27,10 @@ export const metadata = {
 const banner = <Banner storageKey="frontend-mastery-v1">🚀 Welcome to Frontend Mastery - Your complete guide to modern frontend development!</Banner>
 const navbar = (
   <Navbar
-    logo={<><strong>Frontend Mastery</strong> 📘</>}
+    logo={<></>}
   />
 )
-const footer = <Footer>MIT {new Date().getFullYear()} © Frontend Mastery. Built with Nextra.</Footer>
+const footer = <Footer>Made in ❤️ with India.</Footer>
 
 export default async function RootLayout({ children }:{children: React.ReactNode}) {
   return (

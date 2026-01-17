@@ -59,6 +59,8 @@ const HomePage: FC = () => {
   return (
     <div className="min-h-screen bg-white dark:bg-black">
       <div className="max-w-6xl mx-auto px-6 pt-20 pb-32">
+
+        
         {/* Hero Section */}
         <div className="text-center mb-24">
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 dark:text-white mb-8 tracking-tight leading-none">

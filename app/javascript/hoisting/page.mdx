@@ -1,0 +1,739 @@
+# Hoisting: A Deep Dive into JavaScript's Execution Model
+
+Understanding hoisting requires dismantling one of the most persistent misconceptions in JavaScript education. Hoisting is not about physically moving code. It's about how the JavaScript engine processes your source code during compilation before any line executes.
+
+---
+
+## The Misconception vs. Reality
+
+### What Developers Think Happens
+
+```javascript
+console.log(x); // undefined
+var x = 5;
+```
+
+Most tutorials explain this as JavaScript "moving" declarations to the top:
+
+```javascript
+// "JavaScript rewrites your code like this"
+var x;
+console.log(x); // undefined
+x = 5;
+```
+
+### What Actually Happens
+
+JavaScript engines don't rearrange your source code. Instead, they process code in **two distinct phases**:
+
+1. **Compilation Phase** (Creation Phase)
+2. **Execution Phase**
+
+During compilation, the engine performs lexical analysis and creates the necessary data structures to track variable and function bindings. The term "hoisting" is a metaphor describing the *effect* of this two-phase process, not a literal code transformation.
+
+---
+
+## The ECMAScript Specification: Binding Instantiation
+
+The ECMAScript specification doesn't use the word "hoisting." Instead, it describes **binding instantiation**—the process of creating identifier bindings within an environment record before code execution.
+
+### Relevant Specification Sections
+
+- **Section 10.2.1**: Declaration Binding Instantiation
+- **Section 9.1**: Environment Records
+- **Section 14.1.22**: Function Declaration Instantiation
+
+When a function is invoked or a script is evaluated, the engine:
+
+1. Creates a new **Execution Context**
+2. Creates associated **Environment Records**
+3. **Instantiates bindings** for all declarations found in the source text
+4. Begins executing statements
+
+---
+
+## Execution Context Architecture
+
+Every time JavaScript code runs, it executes within an **Execution Context**. Understanding this structure is fundamental to understanding hoisting.
+
+### Execution Context Components
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Execution Context                        │
+├─────────────────────────────────────────────────────────────┤
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │              Lexical Environment                      │  │
+│  │  ┌─────────────────────────────────────────────────┐  │  │
+│  │  │         Environment Record                      │  │  │
+│  │  │  • Declarative Environment Record (let, const,  │  │  │
+│  │  │    function, class, module imports)             │  │  │
+│  │  │  • Object Environment Record (with, global)     │  │  │
+│  │  └─────────────────────────────────────────────────┘  │  │
+│  │  outer: Reference to parent Lexical Environment       │  │
+│  └───────────────────────────────────────────────────────┘  │
+│                                                             │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │              Variable Environment                     │  │
+│  │  • Stores var declarations                            │  │
+│  │  • Stores function declarations (in function scope)   │  │
+│  └───────────────────────────────────────────────────────┘  │
+│                                                             │
+│  ThisBinding: Value of 'this' keyword                       │
+│  PrivateEnvironment: Private class fields (ES2022+)         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Environment Record Types
+
+**Declarative Environment Record**: Used by function declarations, variable declarations, catch clauses, and module code. Binds identifiers directly to values.
+
+**Object Environment Record**: Associates bindings with a specific object (the *binding object*). Used by `with` statements and the global environment.
+
+**Global Environment Record**: A composite record that combines a declarative record (for `let`, `const`, `class`) with an object record (for `var`, function declarations that become properties of `globalThis`).
+
+---
+
+## The Two-Phase Execution Model
+
+### Phase 1: Creation (Compilation)
+
+During the creation phase, the engine scans the entire function body or script and:
+
+1. **Finds all `var` declarations**: Creates bindings initialized to `undefined`
+2. **Finds all function declarations**: Creates bindings initialized to the actual function object
+3. **Finds all `let`/`const` declarations**: Creates bindings but leaves them *uninitialized*
+4. **Finds all class declarations**: Creates bindings but leaves them *uninitialized*
+
+```javascript
+function example() {
+  // Creation Phase Analysis:
+  // 1. Find 'var a' → Create binding 'a', initialize to undefined
+  // 2. Find 'function b()' → Create binding 'b', initialize to function object
+  // 3. Find 'let c' → Create binding 'c', leave UNINITIALIZED
+  // 4. Find 'const d' → Create binding 'd', leave UNINITIALIZED
+
+  console.log(a); // undefined (binding exists, initialized to undefined)
+  console.log(b); // [Function: b] (binding exists, initialized to function)
+  console.log(c); // ReferenceError: Cannot access 'c' before initialization
+  console.log(d); // ReferenceError: Cannot access 'd' before initialization
+
+  var a = 1;
+  function b() { return 2; }
+  let c = 3;
+  const d = 4;
+}
+```
+
+### Phase 2: Execution
+
+The engine executes statements sequentially. When it encounters:
+
+- **`var` assignment**: Updates the already-existing binding's value
+- **`let`/`const` declaration line**: Initializes the binding (exits TDZ)
+- **Function call**: Creates new execution context, repeats the two-phase process
+
+---
+
+## Variable Hoisting: var vs. let vs. const
+
+### var: Hoisted and Initialized
+
+`var` declarations are hoisted to the top of their function scope (or global scope) and initialized to `undefined`.
+
+```javascript
+function varExample() {
+  console.log(x); // undefined — not ReferenceError
+
+  if (false) {
+    var x = 'never executed';
+  }
+
+  console.log(x); // undefined — binding exists due to hoisting
+}
+```
+
+**Key insight**: The conditional block never executes, yet `x` is still accessible. This is because `var` hoisting occurs during compilation—before runtime conditionals are evaluated.
+
+#### var's Function Scope Semantics
+
+```javascript
+function varScope() {
+  for (var i = 0; i < 3; i++) {
+    setTimeout(() => console.log(i), 100);
+  }
+  // Output: 3, 3, 3 — not 0, 1, 2
+  // Only one 'i' binding exists for the entire function
+}
+```
+
+### let and const: Hoisted but Uninitialized (TDZ)
+
+`let` and `const` are hoisted but enter the **Temporal Dead Zone (TDZ)** until their declaration is evaluated.
+
+```javascript
+function tdzExample() {
+  // TDZ for 'x' begins here (creation phase created the binding)
+
+  console.log(x); // ReferenceError: Cannot access 'x' before initialization
+
+  let x = 5; // TDZ ends here — binding is initialized
+
+  console.log(x); // 5
+}
+```
+
+**Critical distinction**: The error is "Cannot access before initialization," not "x is not defined." The binding *exists*—it's just not accessible yet.
+
+### Proving let/const Are Hoisted
+
+```javascript
+let x = 'outer';
+
+function scopeTest() {
+  console.log(x); // ReferenceError: Cannot access 'x' before initialization
+  let x = 'inner';
+}
+
+scopeTest();
+```
+
+If `let` wasn't hoisted, the first `console.log` would print `'outer'` by accessing the outer scope's `x`. The ReferenceError proves that the inner `x` binding already exists (is hoisted) but is in its TDZ.
+
+---
+
+## The Temporal Dead Zone: V8 Implementation Details
+
+### How V8 Tracks TDZ
+
+V8 uses a special internal value called **"the hole"** (`TheHole`) to represent uninitialized bindings.
+
+```
+Memory representation:
+┌─────────────────────┐
+│  Binding: x         │
+│  Value: <the-hole>  │  ← Accessing this throws ReferenceError
+└─────────────────────┘
+
+After initialization:
+┌─────────────────────┐
+│  Binding: x         │
+│  Value: 5           │
+└─────────────────────┘
+```
+
+### TDZ Check Bytecode
+
+When V8 compiles code with `let`/`const`, it inserts **TDZ check operations**:
+
+```javascript
+let x = getValue();
+
+// V8 bytecode (simplified):
+// 1. LdaTheHole                    ; Load the hole value
+// 2. Star r0                        ; Store in register (creates binding with hole)
+// 3. CallRuntime getValue           ; Call getValue()
+// 4. ThrowReferenceErrorIfHole r0   ; Check if still hole (TDZ check)
+// 5. Star r0                        ; Store actual value
+```
+
+### Performance Implications
+
+TDZ checks add runtime overhead. V8's TurboFan optimizing compiler can often eliminate these checks when it can prove the access is safe, but in cold code, the checks remain.
+
+```javascript
+// V8 can optimize away TDZ checks here
+function optimizable() {
+  let x = 5;
+  return x + 1; // TurboFan knows x is definitely initialized
+}
+
+// TDZ checks harder to optimize
+function lessOptimizable(condition) {
+  if (condition) {
+    let x = 5;
+  }
+  // Complex control flow makes TDZ analysis harder
+}
+```
+
+---
+
+## Function Hoisting: Declarations vs. Expressions
+
+### Function Declarations: Fully Hoisted
+
+Function declarations are unique—both the binding and the value (the function object) are hoisted.
+
+```javascript
+greet(); // "Hello" — works because entire function is hoisted
+
+function greet() {
+  console.log('Hello');
+}
+```
+
+#### Internal Representation
+
+During creation phase:
+```
+Environment Record:
+┌──────────────┬─────────────────────────────┐
+│ greet        │ <Function object: greet>    │
+└──────────────┴─────────────────────────────┘
+```
+
+### Function Expressions: Variable Hoisting Rules Apply
+
+```javascript
+greet(); // TypeError: greet is not a function
+
+var greet = function() {
+  console.log('Hello');
+};
+```
+
+During creation phase:
+```
+Environment Record:
+┌──────────────┬─────────────────────────────┐
+│ greet        │ undefined                   │  ← Only var binding hoisted
+└──────────────┴─────────────────────────────┘
+```
+
+The function object is assigned during execution phase when the assignment statement runs.
+
+### Named Function Expressions: The Binding Paradox
+
+```javascript
+var factorial = function fact(n) {
+  if (n <= 1) return 1;
+  return n * fact(n - 1); // 'fact' is accessible here
+};
+
+factorial(5); // 120
+fact(5);      // ReferenceError: fact is not defined
+```
+
+The `fact` identifier is only bound within the function's own scope—it's not hoisted to the enclosing scope.
+
+### Arrow Functions: No Hoisting Difference
+
+Arrow functions follow the same hoisting rules as function expressions:
+
+```javascript
+greet(); // TypeError or ReferenceError depending on var/let/const
+
+const greet = () => console.log('Hello');
+```
+
+---
+
+## Function Declaration Hoisting Priority
+
+When function declarations and `var` declarations share the same name, the function wins during creation phase:
+
+```javascript
+console.log(foo); // [Function: foo]
+
+var foo = 'string';
+function foo() { return 'function'; }
+
+console.log(foo); // 'string' — reassigned during execution
+```
+
+### The Algorithm
+
+1. **Process function declarations first** — Create binding, assign function object
+2. **Process var declarations** — If binding already exists, skip (don't reinitialize)
+3. **Execute code** — Assignments overwrite as encountered
+
+```javascript
+// Equivalent execution:
+// Creation phase: foo = <Function>
+// Execution phase: foo = 'string' (line 3)
+```
+
+---
+
+## Block-Level Function Hoisting (ES6+ Complexity)
+
+ES6 introduced block-scoped function declarations, but legacy compatibility created complex semantics.
+
+### In Strict Mode
+
+Functions are block-scoped (like `let`):
+
+```javascript
+'use strict';
+
+{
+  function blockFunc() { return 'inside'; }
+  console.log(blockFunc()); // 'inside'
+}
+
+blockFunc(); // ReferenceError — not accessible outside block
+```
+
+### In Sloppy Mode (Web Compatibility)
+
+A bizarre hybrid behavior exists for backward compatibility (Annex B.3.3):
+
+```javascript
+// Non-strict mode
+console.log(typeof blockFunc); // 'undefined' (var-like hoisting to function scope)
+
+{
+  function blockFunc() { return 'inside'; }
+  console.log(blockFunc()); // 'inside'
+}
+
+console.log(typeof blockFunc); // 'function' (now visible outside!)
+```
+
+This behavior exists because pre-ES6 code relied on function declarations inside blocks leaking to function scope. Avoid writing new code that depends on this.
+
+---
+
+## Class Hoisting: Strict TDZ Enforcement
+
+Classes are hoisted but remain in TDZ until their definition is evaluated.
+
+```javascript
+const instance = new MyClass(); // ReferenceError: Cannot access 'MyClass' before initialization
+
+class MyClass {
+  constructor() {
+    this.value = 42;
+  }
+}
+```
+
+### Why Classes Have Strict TDZ
+
+Unlike functions, classes have:
+- **extends clause** that must be evaluated
+- **Decorators** (stage 3) that require evaluation order
+- **Static blocks** that run at class evaluation time
+
+```javascript
+class Child extends getParentClass() { // getParentClass() must be callable
+  static {
+    console.log('Static block runs at class evaluation');
+  }
+}
+```
+
+If classes were hoisted like functions, the `extends` clause couldn't reference runtime values.
+
+### Class Expressions
+
+```javascript
+const MyClass = class InternalName {
+  static getInternalName() {
+    return InternalName.name; // 'InternalName' is accessible inside
+  }
+};
+
+MyClass.getInternalName(); // 'InternalName'
+InternalName; // ReferenceError — not in outer scope
+```
+
+---
+
+## Module-Level Hoisting Semantics
+
+ES Modules have their own hoisting behavior with **live bindings**.
+
+### Import Hoisting
+
+Imports are hoisted and resolved before any module code executes:
+
+```javascript
+console.log(helper); // [Function: helper] — already available
+
+import { helper } from './utils.js';
+
+helper();
+```
+
+The entire import statement is hoisted, and bindings are established during the module's **instantiation phase**.
+
+### Export Binding Semantics
+
+Exports create **live bindings**, not value copies:
+
+```javascript
+// counter.js
+export let count = 0;
+export function increment() {
+  count++;
+}
+
+// main.js
+import { count, increment } from './counter.js';
+
+console.log(count); // 0
+increment();
+console.log(count); // 1 — live binding reflects the change
+```
+
+### Circular Dependencies and Hoisting
+
+```javascript
+// a.js
+import { b } from './b.js';
+export const a = 'A';
+console.log('a.js:', b);
+
+// b.js
+import { a } from './a.js';
+export const b = 'B';
+console.log('b.js:', a);
+```
+
+The execution order and what's accessible depends on which module is the entry point. This is where understanding hoisting in modules becomes critical:
+
+- Imports are hoisted and bindings created
+- TDZ applies to the bindings until actual initialization
+- Circular references may see `undefined` or throw ReferenceError depending on timing
+
+---
+
+## V8 Internals: How Hoisting Is Implemented
+
+### Parser Phase
+
+V8's parser performs **pre-parsing** (lazy parsing) and **full parsing**:
+
+1. **Scanner**: Tokenizes source code
+2. **Pre-parser**: Quickly scans function bodies to find syntax errors and variable declarations without building full AST
+3. **Parser**: Builds AST for immediately-executed code
+
+During parsing, V8 builds a **scope chain** and records all declarations:
+
+```
+Scope Analysis Output:
+┌─────────────────────────────────────────────┐
+│ Function Scope: example                     │
+├─────────────────────────────────────────────┤
+│ var declarations: [a, b]                    │
+│ let declarations: [c]                       │
+│ const declarations: [d]                     │
+│ function declarations: [inner]              │
+│ needs_context: true                         │
+│ inner_scope_calls_eval: false               │
+└─────────────────────────────────────────────┘
+```
+
+### Compilation Phase
+
+V8's Ignition interpreter generates bytecode. Variable allocation happens here:
+
+```javascript
+function example() {
+  var x = 1;
+  let y = 2;
+  const z = 3;
+}
+
+// Simplified bytecode:
+// CreateFunctionContext
+// LdaZero
+// Star r0          ; x = undefined (implicit, hoisted)
+// LdaTheHole
+// Star r1          ; y = <the-hole> (TDZ)
+// LdaTheHole
+// Star r2          ; z = <the-hole> (TDZ)
+// LdaSmi [1]
+// Star r0          ; x = 1
+// LdaSmi [2]
+// Star r1          ; y = 2 (exits TDZ)
+// LdaSmi [3]
+// Star r2          ; z = 3 (exits TDZ)
+```
+
+### Hidden Classes and Variable Storage
+
+V8 uses **hidden classes** (Maps) to optimize property access. For local variables:
+
+- **Stack allocation**: Variables that don't escape the function
+- **Context allocation**: Variables captured by closures or accessed via `eval`
+
+```javascript
+function noEscape() {
+  var x = 1; // Stack-allocated
+  return x + 1;
+}
+
+function escapes() {
+  var x = 1;
+  return () => x; // x must be context-allocated
+}
+```
+
+Context-allocated variables live in a heap-allocated **Context** object, following the same hoisting semantics but with different memory representation.
+
+---
+
+## Practical Implications and Patterns
+
+### The Module Pattern and Hoisting
+
+```javascript
+var Module = (function() {
+  // Private variables — hoisted within IIFE
+  var privateVar = 'secret';
+
+  function privateFunction() {
+    return privateVar;
+  }
+
+  // Public API
+  return {
+    getSecret: privateFunction
+  };
+})();
+```
+
+Understanding hoisting explains why `privateFunction` can reference `privateVar` even though `privateVar` is declared after it lexically—both are hoisted within the IIFE.
+
+### Avoiding TDZ in Class Properties
+
+```javascript
+class ConfiguredService {
+  // Class fields (ES2022) have their own initialization order
+  config = this.loadConfig(); // Runs after construction
+
+  constructor(options) {
+    this.options = options;
+    // this.config is undefined here!
+  }
+
+  loadConfig() {
+    return { ...defaults, ...this.options };
+  }
+}
+```
+
+**Fix**: Initialize dependencies in constructor:
+
+```javascript
+class ConfiguredService {
+  constructor(options) {
+    this.options = options;
+    this.config = this.loadConfig(); // Explicit ordering
+  }
+}
+```
+
+### Debugging Hoisting Issues
+
+```javascript
+// Common bug: Reference in default parameter
+function buggy(callback = helper) { // ReferenceError if using let
+  let helper = () => {};
+  callback();
+}
+
+// Default parameters are evaluated in their own scope
+// before the function body's declarations are initialized
+```
+
+---
+
+## Common Interview Questions Explained
+
+### Question 1: What gets logged?
+
+```javascript
+var a = 1;
+function b() {
+  a = 10;
+  return;
+  function a() {}
+}
+b();
+console.log(a);
+```
+
+**Answer**: `1`
+
+**Explanation**:
+1. Function declaration `function a() {}` is hoisted inside `b`
+2. This creates a local `a` binding in `b`'s scope
+3. `a = 10` modifies the local `a`, not the global
+4. Global `a` remains `1`
+
+### Question 2: What gets logged?
+
+```javascript
+console.log(typeof foo);
+console.log(typeof bar);
+
+var foo = 'hello';
+function bar() { return 'world'; }
+```
+
+**Answer**: `undefined`, `function`
+
+**Explanation**:
+- `var foo` is hoisted, initialized to `undefined`, so `typeof` returns `'undefined'`
+- `function bar` is fully hoisted with its value, so `typeof` returns `'function'`
+
+### Question 3: Error or output?
+
+```javascript
+let x = x;
+```
+
+**Answer**: `ReferenceError: Cannot access 'x' before initialization`
+
+**Explanation**: The right-hand side `x` is evaluated while `x` is still in TDZ.
+
+---
+
+## ESLint Rules for Hoisting Safety
+
+```javascript
+// .eslintrc.js
+module.exports = {
+  rules: {
+    'no-use-before-define': ['error', {
+      functions: false, // Functions are safe due to full hoisting
+      classes: true,
+      variables: true,
+    }],
+    'no-var': 'error',           // Prefer let/const
+    'block-scoped-var': 'error', // Catch var misuse in blocks
+  }
+};
+```
+
+---
+
+## Summary: The Mental Model
+
+1. **Hoisting is a metaphor** for binding creation during compilation
+2. **All declarations are hoisted** — but with different initialization states
+3. **var**: Hoisted + initialized to `undefined`
+4. **let/const**: Hoisted + uninitialized (TDZ until declaration)
+5. **function declaration**: Hoisted + initialized to function object
+6. **function expression/arrow**: Follows its variable's hoisting rules
+7. **class**: Hoisted + uninitialized (strict TDZ)
+8. **import**: Hoisted + bindings established during module instantiation
+
+The two-phase model (creation + execution) is the accurate mental model. "Hoisting" is the observable effect, not the mechanism.
+
+---
+
+## Further Reading
+
+- [ECMAScript Specification - Declaration Binding Instantiation](https://tc39.es/ecma262/#sec-declaration-binding-instantiation)
+- [V8 Blog - Understanding V8's Bytecode](https://v8.dev/blog/understanding-v8-bytecode)
+- [Dmitry Soshnikov - ECMAScript Execution Contexts](http://dmitrysoshnikov.com/ecmascript/chapter-1-execution-contexts/)
+- [Axel Rauschmayer - Variables and Scoping in ES6](https://exploringjs.com/es6/ch_variables.html)
+
+---
+
+*This documentation reflects ECMAScript 2024 specification behavior. Engine-specific implementation details are based on V8 (Chrome, Node.js) but concepts apply to all major engines.*
